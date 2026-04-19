@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/wait.h>
+#include <sys/select.h>
 #include "../include/common.h"
 #include "../include/queue.h"
 
@@ -66,30 +67,33 @@ int main() {
 
     printf("Server started (multi-client)...\n");
 
-    while(1){
-        client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
+    while (1) {
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(server_fd, &readfds);
 
-        if (client_socket < 0) {
-            perror("Accept failed");
-            continue;
-        }
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100000; // 0.1 sec
 
-        if (fork() == 0) { // Child process handles client
-            close(server_fd);
+        int activity = select(server_fd + 1, &readfds, NULL, NULL, &timeout);
+
+        // 🔹 If client is connecting
+        if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
+            int client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
+
             handle_client(client_socket);
-            close(client_socket);
-            exit(0);
-        } 
-        else { // Parent process
-            close(client_socket);
         }
 
-        // JOB QUEUE EXECUTION
+        // 🔥 ALWAYS RUN SCHEDULER
         job_t *job = get_next_job();
         if (job != NULL) {
             char output[MAX_OUTPUT_LEN] = {0};
+
             execute_command(job->command, output);
+
             update_job(job->job_id, JOB_COMPLETED, output);
+
             printf("Executed Job %d: %s\n", job->job_id, job->command);
         }
     }
