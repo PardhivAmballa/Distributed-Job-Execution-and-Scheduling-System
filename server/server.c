@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <sys/wait.h>
 #include "../include/common.h"
+#include "../include/queue.h"
 
 #define PORT 8080
 
@@ -35,7 +36,14 @@ void handle_client(int client_socket) {
 
     recv(client_socket, &msg, sizeof(msg), 0);
 
-    execute_command(msg.job.command, msg.job.output);
+    // Add job to queue
+    int job_id = add_job(msg.job.command);
+
+    if (job_id == -1) {
+        strcpy(msg.job.output, "Queue Full!");
+    } else {
+        sprintf(msg.job.output, "Job submitted with ID: %d", job_id);
+    }
 
     send(client_socket, &msg, sizeof(msg), 0);
 
@@ -58,17 +66,31 @@ int main() {
 
     printf("Server started (multi-client)...\n");
 
-    while (1) {
+    while(1){
         client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
 
-        if (fork() == 0) {
-            // Child process handles client
+        if (client_socket < 0) {
+            perror("Accept failed");
+            continue;
+        }
+
+        if (fork() == 0) { // Child process handles client
             close(server_fd);
             handle_client(client_socket);
-            exit(0);
-        } else {
-            // Parent continues accepting new clients
             close(client_socket);
+            exit(0);
+        } 
+        else { // Parent process
+            close(client_socket);
+        }
+
+        // JOB QUEUE EXECUTION
+        job_t *job = get_next_job();
+        if (job != NULL) {
+            char output[MAX_OUTPUT_LEN] = {0};
+            execute_command(job->command, output);
+            update_job(job->job_id, JOB_COMPLETED, output);
+            printf("Executed Job %d: %s\n", job->job_id, job->command);
         }
     }
 
