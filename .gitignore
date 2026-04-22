@@ -1,0 +1,16 @@
+# Executables
+server_app
+client_app
+*.out
+
+# Logs
+logs/*.log
+
+# Object files
+*.o
+
+# OS files
+.DS_Store
+
+# Temporary
+*.swp

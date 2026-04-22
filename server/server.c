@@ -2,11 +2,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 #include <sys/wait.h>
+#include <arpa/inet.h>
 #include <sys/select.h>
 #include "../include/common.h"
 #include "../include/queue.h"
+#include "../include/logger.h"
+#include "../include/scheduler.h"
 
 #define PORT 8080
 
@@ -18,15 +20,12 @@ void execute_command(char *cmd, char *output) {
         dup2(fd[1], STDOUT_FILENO);
         close(fd[0]);
         close(fd[1]);
-
         execl("/bin/sh", "sh", "-c", cmd, NULL);
         exit(1);
     } else {
         close(fd[1]);
         int n = read(fd[0], output, MAX_OUTPUT_LEN - 1);
-        if (n > 0) {
-            output[n] = '\0';
-        }
+        if (n > 0) output[n] = '\0';
         close(fd[0]);
         wait(NULL);
     }
@@ -37,7 +36,6 @@ void handle_client(int client_socket) {
 
     recv(client_socket, &msg, sizeof(msg), 0);
 
-    // Add job to queue
     int job_id = add_job(msg.job.command);
 
     if (job_id == -1) {
@@ -47,12 +45,11 @@ void handle_client(int client_socket) {
     }
 
     send(client_socket, &msg, sizeof(msg), 0);
-
     close(client_socket);
 }
 
 int main() {
-    int server_fd, client_socket;
+    int server_fd;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
 
@@ -65,36 +62,40 @@ int main() {
     bind(server_fd, (struct sockaddr*)&address, sizeof(address));
     listen(server_fd, 5);
 
-    printf("Server started (multi-client)...\n");
+    printf("Server started...\n");
 
     while (1) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(server_fd, &readfds);
 
-        struct timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 100000; // 0.1 sec
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000; // 0.1 sec
 
-        int activity = select(server_fd + 1, &readfds, NULL, NULL, &timeout);
+        int activity = select(server_fd + 1, &readfds, NULL, NULL, &tv);
 
-        // 🔹 If client is connecting
+        // 🔹 If client connects
         if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
             int client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
-
             handle_client(client_socket);
         }
 
-        // 🔥 ALWAYS RUN SCHEDULER
-        job_t *job = get_next_job();
-        if (job != NULL) {
-            char output[MAX_OUTPUT_LEN] = {0};
+        for (int i = 0; i < 2; i++) {
+            job_t *job = schedule_job();
 
-            execute_command(job->command, output);
+            if (job != NULL) {
+                char output[MAX_OUTPUT_LEN] = {0};
 
-            update_job(job->job_id, JOB_COMPLETED, output);
+                execute_command(job->command, output);
 
-            printf("Executed Job %d: %s\n", job->job_id, job->command);
+                update_job(job->job_id, JOB_COMPLETED, output);
+
+                log_job(job->job_id, job->command, "COMPLETED");
+
+                printf("Worker %d executed Job %d: %s\n",
+                    i+1, job->job_id, job->command);
+            }
         }
     }
 

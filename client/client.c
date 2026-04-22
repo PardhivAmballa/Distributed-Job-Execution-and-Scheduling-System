@@ -12,36 +12,44 @@ int main() {
     struct sockaddr_in server_addr;
     message_t msg;
 
-    // Create socket
-    sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) {
-        perror("Socket creation failed");
-        exit(1);
+    while (1) {
+        printf("\n==== Job System ====\n");
+        printf("1. Submit Job\n");
+        printf("2. Exit\n");
+        printf("Enter choice: ");
+
+        int choice;
+        scanf("%d", &choice);
+        getchar(); // clear newline
+
+        if (choice == 1) {
+            sock = socket(AF_INET, SOCK_STREAM, 0);
+
+            server_addr.sin_family = AF_INET;
+            server_addr.sin_port = htons(PORT);
+            server_addr.sin_addr.s_addr = INADDR_ANY;
+
+            connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
+
+            printf("Enter command: ");
+            fgets(msg.job.command, MAX_CMD_LEN, stdin);
+
+            msg.type = 1;
+
+            send(sock, &msg, sizeof(msg), 0);
+            recv(sock, &msg, sizeof(msg), 0);
+
+            printf("Response: %s\n", msg.job.output);
+
+            close(sock);
+        }
+        else if (choice == 2) {
+            break;
+        }
+        else {
+            printf("Invalid choice\n");
+        }
     }
 
-    // Set server address
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(PORT);
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-
-    // Connect to server
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Connection failed");
-        exit(1);
-    }
-
-    printf("Enter command: ");
-    // Read command from user
-    fgets(msg.job.command, MAX_CMD_LEN, stdin);
-
-    msg.type = 1; // submit job
-
-    send(sock, &msg, sizeof(msg), 0); // Send job to server
-
-    recv(sock, &msg, sizeof(msg), 0); // Receive output from server
-
-    printf("Output:\n%s\n", msg.job.output);
-
-    close(sock);
     return 0;
 }
