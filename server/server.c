@@ -2,13 +2,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/wait.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+
 #include "../include/common.h"
 #include "../include/queue.h"
-#include "../include/logger.h"
 #include "../include/scheduler.h"
+#include "../include/logger.h"
+#include "../include/auth.h"
 
 #define PORT 8080
 
@@ -33,15 +34,30 @@ void execute_command(char *cmd, char *output) {
 
 void handle_client(int client_socket) {
     message_t msg;
-
     recv(client_socket, &msg, sizeof(msg), 0);
 
-    int job_id = add_job(msg.job.command);
+    if (msg.type == MSG_LOGIN) {
+        if (authenticate(msg.username, msg.password))
+            strcpy(msg.job.output, "Login Success");
+        else
+            strcpy(msg.job.output, "Login Failed");
+    }
 
-    if (job_id == -1) {
-        strcpy(msg.job.output, "Queue Full!");
-    } else {
-        sprintf(msg.job.output, "Job submitted with ID: %d", job_id);
+    else if (msg.type == MSG_SUBMIT) {
+        int id = add_job(msg.job.command);
+        sprintf(msg.job.output, "Job ID: %d", id);
+    }
+
+    else if (msg.type == MSG_STATUS) {
+        job_t *job = get_job_by_id(msg.job.job_id);
+        if (!job) strcpy(msg.job.output, "Invalid ID");
+        else sprintf(msg.job.output, "Status: %d", job->status);
+    }
+
+    else if (msg.type == MSG_RESULT) {
+        job_t *job = get_job_by_id(msg.job.job_id);
+        if (!job) strcpy(msg.job.output, "Invalid ID");
+        else strcpy(msg.job.output, job->output);
     }
 
     send(client_socket, &msg, sizeof(msg), 0);
@@ -69,36 +85,29 @@ int main() {
         FD_ZERO(&readfds);
         FD_SET(server_fd, &readfds);
 
-        struct timeval tv;
-        tv.tv_sec = 0;
-        tv.tv_usec = 100000; // 0.1 sec
+        struct timeval tv = {0, 100000};
 
         int activity = select(server_fd + 1, &readfds, NULL, NULL, &tv);
 
-        // 🔹 If client connects
         if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
-            int client_socket = accept(server_fd, (struct sockaddr*)&address, (socklen_t*)&addrlen);
+            int client_socket = accept(server_fd,
+                (struct sockaddr*)&address, (socklen_t*)&addrlen);
             handle_client(client_socket);
         }
 
         for (int i = 0; i < 2; i++) {
             job_t *job = schedule_job();
 
-            if (job != NULL) {
+            if (job) {
                 char output[MAX_OUTPUT_LEN] = {0};
 
                 execute_command(job->command, output);
-
                 update_job(job->job_id, JOB_COMPLETED, output);
 
                 log_job(job->job_id, job->command, "COMPLETED");
 
-                printf("Worker %d executed Job %d: %s\n",
-                    i+1, job->job_id, job->command);
+                printf("Worker %d executed Job %d\n", i+1, job->job_id);
             }
         }
     }
-
-    close(server_fd);
-    return 0;
 }

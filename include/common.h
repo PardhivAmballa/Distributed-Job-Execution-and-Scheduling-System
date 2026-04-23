@@ -3,9 +3,7 @@
 
 #define MAX_CMD_LEN 256
 #define MAX_OUTPUT_LEN 1024
-#define MAX_JOBS 100
 
-// Job Status
 typedef enum {
     JOB_PENDING,
     JOB_RUNNING,
@@ -13,8 +11,6 @@ typedef enum {
     JOB_FAILED
 } job_status_t;
 
-
-// Job Structure
 typedef struct {
     int job_id;
     char command[MAX_CMD_LEN];
@@ -22,11 +18,16 @@ typedef struct {
     char output[MAX_OUTPUT_LEN];
 } job_t;
 
-
-// Message between client and server
 typedef struct {
-    int type; // 1 = submit job, 2 = get result
+    int type;
+    char username[50];
+    char password[50];
     job_t job;
 } message_t;
+
+#define MSG_LOGIN 1
+#define MSG_SUBMIT 2
+#define MSG_STATUS 3
+#define MSG_RESULT 4
 
 #endif
