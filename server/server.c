@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/select.h>
+#include <sys/wait.h>
 
 #include "../include/common.h"
 #include "../include/queue.h"
@@ -60,6 +61,22 @@ void handle_client(int client_socket) {
         else strcpy(msg.job.output, job->output);
     }
 
+    else if (msg.type == MSG_ASSIGN) {
+        job_t *job = get_next_job();
+        if (!job) {
+            msg.job.job_id = -1;
+            strcpy(msg.job.output, "No pending jobs");
+        } else {
+            msg.job = *job;
+        }
+    }
+
+    else if (msg.type == MSG_COMPLETE) {
+        update_job(msg.job.job_id, JOB_COMPLETED, msg.job.output);
+        log_job(msg.job.job_id, msg.job.command, "COMPLETED");
+        strcpy(msg.job.output, "ACK");
+    }
+
     send(client_socket, &msg, sizeof(msg), 0);
     close(client_socket);
 }
@@ -67,7 +84,7 @@ void handle_client(int client_socket) {
 int main() {
     int server_fd;
     struct sockaddr_in address;
-    int addrlen = sizeof(address);
+    socklen_t addrlen = sizeof(address);
 
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -91,23 +108,8 @@ int main() {
 
         if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
             int client_socket = accept(server_fd,
-                (struct sockaddr*)&address, (socklen_t*)&addrlen);
+                (struct sockaddr*)&address, &addrlen);
             handle_client(client_socket);
-        }
-
-        for (int i = 0; i < 2; i++) {
-            job_t *job = schedule_job();
-
-            if (job) {
-                char output[MAX_OUTPUT_LEN] = {0};
-
-                execute_command(job->command, output);
-                update_job(job->job_id, JOB_COMPLETED, output);
-
-                log_job(job->job_id, job->command, "COMPLETED");
-
-                printf("Worker %d executed Job %d\n", i+1, job->job_id);
-            }
         }
     }
 }

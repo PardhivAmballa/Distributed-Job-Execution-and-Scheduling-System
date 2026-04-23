@@ -3,6 +3,7 @@
 
 #define MAX_CMD_LEN 256
 #define MAX_OUTPUT_LEN 1024
+#define MAX_JOBS 128
 
 typedef enum {
     JOB_PENDING,
@@ -25,9 +26,11 @@ typedef struct {
     job_t job;
 } message_t;
 
-#define MSG_LOGIN 1
+#define MSG_LOGIN  1
 #define MSG_SUBMIT 2
 #define MSG_STATUS 3
 #define MSG_RESULT 4
+#define MSG_ASSIGN 5
+#define MSG_COMPLETE 6
 
 #endif

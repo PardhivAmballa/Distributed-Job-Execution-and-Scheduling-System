@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "../include/common.h"
 
@@ -41,4 +42,14 @@ void update_job(int job_id, job_status_t status, char *output) {
             return;
         }
     }
+}
+
+// Get a job by its ID
+job_t* get_job_by_id(int job_id) {
+    for (int i = 0; i < job_count; i++) {
+        if (job_queue[i].job_id == job_id) {
+            return &job_queue[i];
+        }
+    }
+    return NULL;
 }

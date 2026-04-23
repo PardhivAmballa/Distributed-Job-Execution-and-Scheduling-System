@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <sys/wait.h>
 #include "../include/common.h"
 
 #define PORT 8080
@@ -22,7 +23,7 @@ int main() {
     sock = socket(AF_INET, SOCK_STREAM, 0);
     server.sin_family = AF_INET;
     server.sin_port = htons(PORT);
-    server.sin_addr.s_addr = INADDR_ANY;
+    server.sin_addr.s_addr = inet_addr("127.0.0.1");
 
     connect(sock, (struct sockaddr*)&server, sizeof(server));
 
