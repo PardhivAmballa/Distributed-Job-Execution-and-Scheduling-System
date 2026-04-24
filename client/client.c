@@ -14,9 +14,9 @@ int main() {
 
     // LOGIN
     printf("Username: ");
-    scanf("%s", msg.username);
+    scanf("%49s", msg.username);
     printf("Password: ");
-    scanf("%s", msg.password);
+    scanf("%49s", msg.password);
 
     msg.type = MSG_LOGIN;
 
@@ -36,30 +36,29 @@ int main() {
     while (1) {
         printf("\n1.Submit 2.Status 3.Result 4.Exit\n");
         int ch;
-        scanf("%d", &ch);
+        if (scanf("%d", &ch) != 1) break;
 
         sock = socket(AF_INET, SOCK_STREAM, 0);
         connect(sock, (struct sockaddr*)&server, sizeof(server));
 
         if (ch == 1) {
             msg.type = MSG_SUBMIT;
-            getchar();
+            getchar(); // Consume newline
             printf("Command: ");
             fgets(msg.job.command, MAX_CMD_LEN, stdin);
+            // Remove trailing newline from fgets
+            msg.job.command[strcspn(msg.job.command, "\n")] = 0;
         }
-
         else if (ch == 2) {
             msg.type = MSG_STATUS;
             printf("Job ID: ");
             scanf("%d", &msg.job.job_id);
         }
-
         else if (ch == 3) {
             msg.type = MSG_RESULT;
             printf("Job ID: ");
             scanf("%d", &msg.job.job_id);
         }
-
         else break;
 
         send(sock, &msg, sizeof(msg), 0);
@@ -68,4 +67,5 @@ int main() {
         printf("Response: %s\n", msg.job.output);
         close(sock);
     }
+    return 0;
 }

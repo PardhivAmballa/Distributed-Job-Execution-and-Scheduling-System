@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 /* Bug 11 fix: limit fscanf field widths to prevent stack buffer overflow */
@@ -9,7 +10,7 @@
 
 #define DEFAULT_USERS_FILE "users.txt"
 
-int authenticate(char *username, char *password) {
+int authenticate(char *username, char *password, char *role) {
     const char *path = getenv("AUTH_USERS_FILE");
     if (!path) path = DEFAULT_USERS_FILE;
 
@@ -19,11 +20,15 @@ int authenticate(char *username, char *password) {
         return 0;
     }
 
-    char u[50], p[50];
+    char u[50], p[50], r[20];
 
     /* Bug 11 fix: use width-limited format specifiers */
-    while (fscanf(fp, "%49s %49s", u, p) == 2) {
+    while (fscanf(fp, "%49s %49s %19s", u, p, r) == 3) {
         if (strcmp(u, username) == 0 && strcmp(p, password) == 0) {
+            if (role != NULL) {
+                strncpy(role, r, 19);
+                role[19] = '\0';
+            }
             fclose(fp);
             return 1;
         }

@@ -1,2 +1,3 @@
-admin admin123
-user user123
+admin admin123 admin
+user user123 user
+worker worker123 worker

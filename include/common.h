@@ -23,6 +23,7 @@ typedef struct {
     int type;
     char username[50];
     char password[50];
+    char role[20];
     job_t job;
 } message_t;
 

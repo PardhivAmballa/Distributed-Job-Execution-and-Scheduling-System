@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "../include/common.h"
+#include "../include/queue.h"
 
 /*
  * NOTE: The caller (server.c) is responsible for holding queue_mutex
@@ -10,6 +13,55 @@
 
 job_t job_queue[MAX_JOBS];
 int job_count = 0;
+
+#define JOBS_FILE "jobs.dat"
+
+/* Load jobs from disk on startup */
+void load_jobs_from_file() {
+    int fd = open(JOBS_FILE, O_RDONLY);
+    if (fd < 0) return; /* File might not exist yet, which is fine */
+
+    /* 4.2 File Locking: Use advisory read lock */
+    struct flock fl;
+    fl.l_type = F_RDLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0; /* Lock entire file */
+    fcntl(fd, F_SETLKW, &fl);
+
+    if (read(fd, &job_count, sizeof(int)) > 0) {
+        read(fd, job_queue, sizeof(job_t) * job_count);
+    }
+
+    fl.l_type = F_UNLCK;
+    fcntl(fd, F_SETLK, &fl);
+    close(fd);
+    printf("queue: loaded %d jobs from %s\n", job_count, JOBS_FILE);
+}
+
+/* Save jobs to disk to persist state */
+void save_jobs_to_file() {
+    int fd = open(JOBS_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (fd < 0) {
+        perror("save_jobs_to_file: open");
+        return;
+    }
+
+    /* 4.2 File Locking: Use advisory write lock */
+    struct flock fl;
+    fl.l_type = F_WRLCK;
+    fl.l_whence = SEEK_SET;
+    fl.l_start = 0;
+    fl.l_len = 0;
+    fcntl(fd, F_SETLKW, &fl);
+
+    write(fd, &job_count, sizeof(int));
+    write(fd, job_queue, sizeof(job_t) * job_count);
+
+    fl.l_type = F_UNLCK;
+    fcntl(fd, F_SETLK, &fl);
+    close(fd);
+}
 
 /* Add job to queue. Returns the new job ID, or -1 if queue is full. */
 int add_job(char *command) {
@@ -25,21 +77,18 @@ int add_job(char *command) {
     job_queue[job_count].output[0] = '\0';
 
     job_count++;
+    save_jobs_to_file();
     return job_count; /* job_id == job_count after increment */
 }
 
 /*
  * Get the next pending job and mark it RUNNING.
- *
- * Bug 9 fix: The caller should handle the case where the worker that received
- * this job disconnects before completing it. A production system would use a
- * heartbeat / timeout to revert JOB_RUNNING back to JOB_PENDING. That logic
- * lives in the scheduler; here we at least document the invariant clearly.
  */
 job_t *get_next_job() {
     for (int i = 0; i < job_count; i++) {
         if (job_queue[i].status == JOB_PENDING) {
             job_queue[i].status = JOB_RUNNING;
+            save_jobs_to_file();
             return &job_queue[i];
         }
     }
@@ -55,6 +104,7 @@ void update_job(int job_id, job_status_t status, char *output) {
                 strncpy(job_queue[i].output, output, MAX_OUTPUT_LEN - 1);
                 job_queue[i].output[MAX_OUTPUT_LEN - 1] = '\0';
             }
+            save_jobs_to_file();
             return;
         }
     }

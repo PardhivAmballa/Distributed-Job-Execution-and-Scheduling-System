@@ -26,16 +26,22 @@ static int connect_to_server() {
 }
 
 static void execute_command(char *cmd, char *output) {
+    /* 4.6 Inter-Process Communication (IPC): Pipes
+       Here we use an unnamed pipe to communicate between the parent (worker)
+       and the child (shell executing the command). The child writes the command's
+       stdout to the pipe, and the parent reads it to send back to the server. */
     int fd[2];
     pipe(fd);
 
     if (fork() == 0) {
-        dup2(fd[1], STDOUT_FILENO);
+        /* Child process */
+        dup2(fd[1], STDOUT_FILENO); /* Redirect stdout to write end of pipe */
         close(fd[0]);
         close(fd[1]);
         execl("/bin/sh", "sh", "-c", cmd, NULL);
         exit(1);
     } else {
+        /* Parent process */
         close(fd[1]);
         int n = read(fd[0], output, MAX_OUTPUT_LEN - 1);
         if (n > 0) output[n] = '\0';
@@ -59,6 +65,9 @@ int main() {
         message_t msg;
         memset(&msg, 0, sizeof(msg));
         msg.type = MSG_ASSIGN;
+        /* Authenticate as worker role */
+        strcpy(msg.username, "worker");
+        strcpy(msg.password, "worker123");
 
         send(sock, &msg, sizeof(msg), 0);
         recv(sock, &msg, sizeof(msg), 0);
@@ -87,6 +96,9 @@ int main() {
         memset(&result, 0, sizeof(result));
         result.type       = MSG_COMPLETE;
         result.job        = msg.job;
+        /* Authenticate as worker role */
+        strcpy(result.username, "worker");
+        strcpy(result.password, "worker123");
         strncpy(result.job.output, output, MAX_OUTPUT_LEN - 1);
 
         send(sock, &result, sizeof(result), 0);
