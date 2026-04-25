@@ -1,4 +1,20 @@
+# Executables
 server_app
 client_app
-logs/*.log
+
+# Logs
+logs/
+*.log
+
+# Data files
+jobs.dat
+
+# Object files
 *.o
+
+# Build folder (if using build/)
+build/
+
+# Temporary / editor files
+*.swp
+.DS_Store
