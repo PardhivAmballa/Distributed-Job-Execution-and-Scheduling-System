@@ -1,33 +1,38 @@
-CC     = gcc
+CC = gcc
 CFLAGS = -Wall -Wextra -Iinclude -pthread
 LDFLAGS = -pthread
 
+BUILD_DIR = build
+
 SERVER_SRC = server/server.c server/queue.c server/logger.c server/scheduler.c server/auth.c
-SERVER_OBJ = $(SERVER_SRC:.c=.o)
-
 CLIENT_SRC = client/client.c
-CLIENT_OBJ = $(CLIENT_SRC:.c=.o)
 
-WORKER_SRC = worker/worker.c
-WORKER_OBJ = $(WORKER_SRC:.c=.o)
+SERVER_OBJ = $(SERVER_SRC:%.c=$(BUILD_DIR)/%.o)
+CLIENT_OBJ = $(CLIENT_SRC:%.c=$(BUILD_DIR)/%.o)
+
+SERVER_OUT = server_app
+CLIENT_OUT = client_app
 
 .PHONY: all clean
 
-all: server_app client_app worker_app
+all: directories $(SERVER_OUT) $(CLIENT_OUT)
 
-server_app: $(SERVER_OBJ)
+directories:
+	mkdir -p $(BUILD_DIR)/server
+	mkdir -p $(BUILD_DIR)/client
+	mkdir -p logs
+
+$(SERVER_OUT): $(SERVER_OBJ)
 	$(CC) $(LDFLAGS) $^ -o $@
 
-client_app: $(CLIENT_OBJ)
+$(CLIENT_OUT): $(CLIENT_OBJ)
 	$(CC) $(LDFLAGS) $^ -o $@
 
-worker_app: $(WORKER_OBJ)
-	$(CC) $(LDFLAGS) $^ -o $@
-
-%.o: %.c
+$(BUILD_DIR)/%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f server_app client_app worker_app
-	rm -f server/*.o client/*.o worker/*.o
-	rm -f jobs.dat logs/system.log
+	rm -rf build
+	rm -f server_app client_app
+	rm -f logs/system.log
+	rm -f jobs.dat server/jobs.dat

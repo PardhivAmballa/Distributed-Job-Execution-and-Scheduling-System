@@ -3,125 +3,141 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <sys/select.h>
-#include <sys/wait.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <sys/wait.h>
 
 #include "../include/common.h"
 #include "../include/queue.h"
-#include "../include/scheduler.h"
 #include "../include/logger.h"
 #include "../include/auth.h"
+#include "../include/scheduler.h"
 
-int port = 8080;
-
-/* Mutex to protect the global job queue from concurrent access */
-pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-/* 4.3 Concurrency Control: Thread Pool variables */
-#define THREAD_POOL_SIZE 10
+#define PORT 8080
+#define THREAD_POOL_SIZE 5
 #define TASK_QUEUE_SIZE 100
 
+/* ================= GLOBALS ================= */
+
 int task_queue[TASK_QUEUE_SIZE];
-int task_count = 0;
-int task_front = 0;
-int task_rear = 0;
+int front = 0, rear = 0, count = 0;
 
 pthread_mutex_t task_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queue_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 sem_t task_sem;
 
-/* 4.1 Role-Based Authorization */
-void handle_client_logic(int client_socket) {
+/* ================= EXECUTE ================= */
+
+void execute_command(char *cmd, char *output) {
+    int fd[2];
+    if (pipe(fd) < 0) {
+        perror("pipe");
+        return;
+    }
+
+    if (fork() == 0) {
+        dup2(fd[1], STDOUT_FILENO);
+        close(fd[0]);
+        close(fd[1]);
+
+        execl("/bin/sh", "sh", "-c", cmd, NULL);
+        exit(1);
+    } else {
+        close(fd[1]);
+
+        int n = read(fd[0], output, MAX_OUTPUT_LEN - 1);
+        if (n > 0) output[n] = '\0';
+
+        close(fd[0]);
+        wait(NULL);
+    }
+}
+
+/* ================= CLIENT ================= */
+
+void handle_client(int client_socket) {
     message_t msg;
 
-    /* Check recv() return value */
-    ssize_t n = recv(client_socket, &msg, sizeof(msg), 0);
-    if (n <= 0) {
+    if (recv(client_socket, &msg, sizeof(msg), 0) <= 0) {
         close(client_socket);
         return;
     }
 
     char role[20] = {0};
-    int authenticated = authenticate(msg.username, msg.password, role);
+    int auth = authenticate(msg.username, msg.password, role);
 
+    /* LOGIN */
     if (msg.type == MSG_LOGIN) {
-        if (authenticated) {
-            strcpy(msg.job.output, "Login Success");
-        } else {
-            strcpy(msg.job.output, "Login Failed");
-        }
+        strcpy(msg.job.output, auth ? "Login Success" : "Login Failed");
     }
-    else if (!authenticated) {
+
+    /* UNAUTHORIZED */
+    else if (!auth) {
         strcpy(msg.job.output, "Unauthorized");
     }
+
+    /* SUBMIT */
     else if (msg.type == MSG_SUBMIT) {
-        if (strcmp(role, "admin") != 0 && strcmp(role, "user") != 0) {
-            strcpy(msg.job.output, "Unauthorized: Role not allowed");
-        } else {
-            pthread_mutex_lock(&queue_mutex);
-            int id = add_job(msg.job.command);
-            pthread_mutex_unlock(&queue_mutex);
-            
-            if (id == -1) {
-                strcpy(msg.job.output, "Error: Queue is full");
-            } else {
-                sprintf(msg.job.output, "Job ID: %d", id);
-            }
-        }
+        pthread_mutex_lock(&queue_mutex);
+        int id = add_job(msg.job.command, msg.username);
+        pthread_mutex_unlock(&queue_mutex);
+
+        if (id == -1)
+            strcpy(msg.job.output, "Queue Full");
+        else
+            sprintf(msg.job.output, "Job ID: %d", id);
     }
+
+    /* STATUS */
     else if (msg.type == MSG_STATUS) {
-        if (strcmp(role, "admin") != 0 && strcmp(role, "user") != 0) {
-            strcpy(msg.job.output, "Unauthorized: Role not allowed");
-        } else {
-            pthread_mutex_lock(&queue_mutex);
-            job_t *job = get_job_by_id(msg.job.job_id);
-            if (!job)
-                strcpy(msg.job.output, "Invalid ID");
-            else
-                sprintf(msg.job.output, "Status: %d", job->status);
-            pthread_mutex_unlock(&queue_mutex);
+        pthread_mutex_lock(&queue_mutex);
+        job_t *job = get_job_by_id(msg.job.job_id);
+        pthread_mutex_unlock(&queue_mutex);
+
+        if (!job) {
+            strcpy(msg.job.output, "Invalid ID");
         }
-    }
-    else if (msg.type == MSG_RESULT) {
-        if (strcmp(role, "admin") != 0 && strcmp(role, "user") != 0) {
-            strcpy(msg.job.output, "Unauthorized: Role not allowed");
-        } else {
-            pthread_mutex_lock(&queue_mutex);
-            job_t *job = get_job_by_id(msg.job.job_id);
-            if (!job)
-                strcpy(msg.job.output, "Invalid ID");
-            else
-                strcpy(msg.job.output, job->output);
-            pthread_mutex_unlock(&queue_mutex);
+        else if (strcmp(role, "admin") != 0 &&
+                 strcmp(job->owner, msg.username) != 0) {
+            strcpy(msg.job.output, "Access Denied");
         }
-    }
-    else if (msg.type == MSG_ASSIGN) {
-        /* Workers use MSG_ASSIGN */
-        if (strcmp(role, "worker") != 0 && strcmp(role, "admin") != 0) {
-            strcpy(msg.job.output, "Unauthorized: Only workers can assign");
-            msg.job.job_id = -1;
-        } else {
-            pthread_mutex_lock(&queue_mutex);
-            job_t *job = schedule_job();
-            if (!job) {
-                msg.job.job_id = -1;
-                strcpy(msg.job.output, "No pending jobs");
-            } else {
-                msg.job = *job;
+        else {
+            char *status;
+            switch (job->status) {
+                case JOB_PENDING: status = "PENDING"; break;
+                case JOB_RUNNING: status = "RUNNING"; break;
+                case JOB_COMPLETED: status = "COMPLETED"; break;
+                default: status = "UNKNOWN";
             }
-            pthread_mutex_unlock(&queue_mutex);
+            sprintf(msg.job.output, "Status: %s", status);
         }
     }
-    else if (msg.type == MSG_COMPLETE) {
-        if (strcmp(role, "worker") != 0 && strcmp(role, "admin") != 0) {
-            strcpy(msg.job.output, "Unauthorized: Only workers can complete");
+
+    /* RESULT */
+    else if (msg.type == MSG_RESULT) {
+        pthread_mutex_lock(&queue_mutex);
+        job_t *job = get_job_by_id(msg.job.job_id);
+        pthread_mutex_unlock(&queue_mutex);
+
+        if (!job) {
+            strcpy(msg.job.output, "Invalid ID");
+        }
+        else if (strcmp(role, "admin") != 0 &&
+                 strcmp(job->owner, msg.username) != 0) {
+            strcpy(msg.job.output, "Access Denied");
+        }
+        else {
+            strcpy(msg.job.output, job->output);
+        }
+    }
+
+    /* ADMIN LOGS */
+    else if (msg.type == MSG_LOGS) {
+        if (strcmp(role, "admin") != 0) {
+            strcpy(msg.job.output, "Access Denied");
         } else {
-            pthread_mutex_lock(&queue_mutex);
-            update_job(msg.job.job_id, JOB_COMPLETED, msg.job.output);
-            pthread_mutex_unlock(&queue_mutex);
-            log_job(msg.job.job_id, msg.job.command, "COMPLETED");
-            strcpy(msg.job.output, "ACK");
+            strcpy(msg.job.output, "Check logs/system.log");
         }
     }
 
@@ -129,130 +145,100 @@ void handle_client_logic(int client_socket) {
     close(client_socket);
 }
 
-/* 4.3 Concurrency Control: Thread worker function */
-void *thread_worker(void *arg) {
+/* ================= THREAD ================= */
+
+void *worker_thread(void *arg) {
     (void)arg;
     while (1) {
         sem_wait(&task_sem);
+
         pthread_mutex_lock(&task_mutex);
-        int client_socket = task_queue[task_front];
-        task_front = (task_front + 1) % TASK_QUEUE_SIZE;
-        task_count--;
+        int client_socket = task_queue[front];
+        front = (front + 1) % TASK_QUEUE_SIZE;
+        count--;
         pthread_mutex_unlock(&task_mutex);
 
-        handle_client_logic(client_socket);
+        handle_client(client_socket);
     }
-    return NULL;
 }
 
-void submit_task(int client_socket) {
-    pthread_mutex_lock(&task_mutex);
-    if (task_count < TASK_QUEUE_SIZE) {
-        task_queue[task_rear] = client_socket;
-        task_rear = (task_rear + 1) % TASK_QUEUE_SIZE;
-        task_count++;
-        sem_post(&task_sem);
-    } else {
-        close(client_socket);
-        fprintf(stderr, "Server: Task queue full, dropping connection\n");
-    }
-    pthread_mutex_unlock(&task_mutex);
-}
+/* ================= EXECUTOR ================= */
 
-void print_help() {
-    printf("Usage: ./server_app [OPTIONS]\n");
-    printf("Options:\n");
-    printf("  -h          Print this help message\n");
-    printf("  -p PORT     Start server on specified port (default 8080)\n");
-    exit(0);
-}
+void *executor_thread(void *arg) {
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&queue_mutex);
+        job_t *job = schedule_job();
+        pthread_mutex_unlock(&queue_mutex);
 
-int main(int argc, char *argv[]) {
-    int opt;
-    while ((opt = getopt(argc, argv, "hp:")) != -1) {
-        switch (opt) {
-            case 'h':
-                print_help();
-                break;
-            case 'p':
-                port = atoi(optarg);
-                break;
-            default:
-                print_help();
+        if (job) {
+            char output[MAX_OUTPUT_LEN] = {0};
+
+            job->status = JOB_RUNNING;
+            execute_command(job->command, output);
+
+            pthread_mutex_lock(&queue_mutex);
+            update_job(job->job_id, JOB_COMPLETED, output);
+            pthread_mutex_unlock(&queue_mutex);
+
+            log_job(job->job_id, job->command, "COMPLETED");
+
+            printf("[EXEC] Job %d done: %s\n", job->job_id, job->command);
         }
+
+        usleep(100000);
     }
+}
 
-    /* Load jobs from persistence storage */
-    load_jobs_from_file();
+/* ================= MAIN ================= */
 
-    /* 4.3 Concurrency Control: Initialize Semaphore and Thread Pool */
-    sem_init(&task_sem, 0, 0);
-    pthread_t pool[THREAD_POOL_SIZE];
-    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
-        if (pthread_create(&pool[i], NULL, thread_worker, NULL) != 0) {
-            perror("Failed to create thread");
-            exit(EXIT_FAILURE);
-        }
-    }
-
+int main() {
     int server_fd;
     struct sockaddr_in address;
     socklen_t addrlen = sizeof(address);
 
+    load_jobs_from_file();
+
+    sem_init(&task_sem, 0, 0);
+
+    pthread_t threads[THREAD_POOL_SIZE];
+    for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+        pthread_create(&threads[i], NULL, worker_thread, NULL);
+        pthread_detach(threads[i]);
+    }
+
+    pthread_t exec_thread;
+    pthread_create(&exec_thread, NULL, executor_thread, NULL);
+
     server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
 
-    int socket_opt = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &socket_opt, sizeof(socket_opt)) < 0) {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-
-    address.sin_family      = AF_INET;
+    address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port        = htons(port);
+    address.sin_port = htons(PORT);
 
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("bind");
-        exit(EXIT_FAILURE);
-    }
+    bind(server_fd, (struct sockaddr*)&address, sizeof(address));
+    listen(server_fd, 10);
 
-    if (listen(server_fd, 10) < 0) {
-        perror("listen");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Server started on port %d with Thread Pool...\n", port);
+    printf("Server running on port %d...\n", PORT);
 
     while (1) {
-        fd_set readfds;
-        FD_ZERO(&readfds);
-        FD_SET(server_fd, &readfds);
+        int client_socket = accept(server_fd,
+            (struct sockaddr*)&address, &addrlen);
 
-        struct timeval tv = {0, 100000};
+        pthread_mutex_lock(&task_mutex);
 
-        int activity = select(server_fd + 1, &readfds, NULL, NULL, &tv);
-        if (activity < 0) {
-            perror("select");
-            continue;
+        if (count < TASK_QUEUE_SIZE) {
+            task_queue[rear] = client_socket;
+            rear = (rear + 1) % TASK_QUEUE_SIZE;
+            count++;
+            sem_post(&task_sem);
+        } else {
+            close(client_socket);
         }
 
-        if (activity > 0 && FD_ISSET(server_fd, &readfds)) {
-            int client_socket = accept(server_fd, (struct sockaddr *)&address, &addrlen);
-            if (client_socket < 0) {
-                perror("accept");
-                continue;
-            }
-
-            /* Pass the socket to the thread pool */
-            submit_task(client_socket);
-        }
+        pthread_mutex_unlock(&task_mutex);
     }
 
     close(server_fd);
-    sem_destroy(&task_sem);
     return 0;
 }

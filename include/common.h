@@ -17,6 +17,7 @@ typedef struct {
     char command[MAX_CMD_LEN];
     job_status_t status;
     char output[MAX_OUTPUT_LEN];
+    char owner[50];
 } job_t;
 
 typedef struct {
@@ -31,7 +32,6 @@ typedef struct {
 #define MSG_SUBMIT 2
 #define MSG_STATUS 3
 #define MSG_RESULT 4
-#define MSG_ASSIGN 5
-#define MSG_COMPLETE 6
+#define MSG_LOGS 5
 
 #endif
