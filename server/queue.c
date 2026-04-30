@@ -12,12 +12,13 @@
 job_t job_queue[MAX_JOBS];
 int job_count = 0;
 
-/* Load jobs from disk */
+// Loads jobs from disk into memory
 void load_jobs_from_file() {
     int fd = open(JOBS_FILE, O_RDONLY);
-    if (fd < 0) return;
+    if(fd < 0) return;
 
-    struct flock fl = {
+    // Read-lock the file to prevent race conditions
+    struct flock fl = { 
         .l_type = F_RDLCK,
         .l_whence = SEEK_SET,
         .l_start = 0,
@@ -27,8 +28,8 @@ void load_jobs_from_file() {
     
     fcntl(fd, F_SETLKW, &fl);
 
-    read(fd, &job_count, sizeof(int));
-    read(fd, job_queue, sizeof(job_t) * job_count);
+    read(fd, &job_count, sizeof(int)); // Reads the number of jobs from the file
+    read(fd, job_queue, sizeof(job_t) * job_count); // Reads the jobs from the file
 
     fl.l_type = F_UNLCK;
     fcntl(fd, F_SETLK, &fl);
@@ -38,7 +39,8 @@ void load_jobs_from_file() {
     printf("[INIT] Loaded %d jobs from disk\n", job_count);
 }
 
-/* Save jobs to disk */
+
+// Saves jobs to disk
 void save_jobs_to_file() {
     int fd = open(JOBS_FILE, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
@@ -65,7 +67,8 @@ void save_jobs_to_file() {
     close(fd);
 }
 
-/* Add job */
+
+// Adds a job to the queue
 int add_job(char *command, char *username) {
     if (job_count >= MAX_JOBS) return -1;
 
@@ -78,7 +81,8 @@ int add_job(char *command, char *username) {
     return job_count;
 }
 
-/* Get next job */
+
+// Gets the next job from the queue
 job_t* get_next_job() {
     for (int i = 0; i < job_count; i++) {
         if (job_queue[i].status == JOB_PENDING) {
@@ -90,7 +94,8 @@ job_t* get_next_job() {
     return NULL;
 }
 
-/* Update job */
+
+// Updates the status of a job
 void update_job(int job_id, job_status_t status, char *output) {
     for (int i = 0; i < job_count; i++) {
         if (job_queue[i].job_id == job_id) {
@@ -107,7 +112,8 @@ void update_job(int job_id, job_status_t status, char *output) {
     }
 }
 
-/* Get job by ID */
+
+// Gets a job by its ID
 job_t* get_job_by_id(int job_id) {
     for (int i = 0; i < job_count; i++) {
         if (job_queue[i].job_id == job_id) {

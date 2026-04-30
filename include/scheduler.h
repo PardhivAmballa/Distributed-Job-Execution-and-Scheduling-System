@@ -3,6 +3,7 @@
 
 #include "common.h"
 
+// Function to schedule a job
 job_t* schedule_job();
 
 #endif

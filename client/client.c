@@ -6,6 +6,7 @@
 
 #define PORT 8080
 
+// Function to connect to the server
 int connect_server(struct sockaddr_in *server) {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -13,7 +14,7 @@ int connect_server(struct sockaddr_in *server) {
     server->sin_port = htons(PORT);
     server->sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    if (connect(sock, (struct sockaddr*)server, sizeof(*server)) < 0) {
+    if(connect(sock, (struct sockaddr*)server, sizeof(*server)) < 0){
         perror("Connection failed");
         return -1;
     }
@@ -21,6 +22,7 @@ int connect_server(struct sockaddr_in *server) {
     return sock;
 }
 
+// Main function
 int main() {
     message_t msg;
     struct sockaddr_in server;
@@ -47,7 +49,7 @@ int main() {
     printf("\n[✔] %s\n", msg.job.output);
     close(sock);
 
-    int is_admin = (strcmp(user, "admin") == 0);
+    int is_admin = (strcmp(user,"admin") == 0);
 
     while (1) {
         printf("\n=============================\n");

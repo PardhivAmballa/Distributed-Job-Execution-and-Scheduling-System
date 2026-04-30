@@ -5,21 +5,23 @@
 
 #define DEFAULT_USERS_FILE "users.txt"
 
+// Authenticates a user based on username and password
 int authenticate(const char *username, const char *password, char *role) {
     const char *path = getenv("AUTH_USERS_FILE");
-    if (!path) path = DEFAULT_USERS_FILE;
+    if(!path) path = DEFAULT_USERS_FILE;
 
     FILE *fp = fopen(path, "r");
-    if (!fp) {
+    if(!fp){
         fprintf(stderr, "auth: cannot open users file '%s'\n", path);
         return 0;
     }
 
     char u[50], p[50], r[20];
 
-    while (fscanf(fp, "%49s %49s %19s", u, p, r) == 3) {
-        if (strcmp(u, username) == 0 && strcmp(p, password) == 0) {
-            if (role != NULL) {
+    // Reads the users file and checks for a valid username and password
+    while(fscanf(fp, "%49s %49s %19s", u, p, r) == 3){
+        if(strcmp(u, username) == 0 && strcmp(p, password) == 0){
+            if(role != NULL){
                 strncpy(role, r, 19);
                 role[19] = '\0';
             }
@@ -27,7 +29,7 @@ int authenticate(const char *username, const char *password, char *role) {
             return 1;
         }
     }
-
+    
     fclose(fp);
     return 0;
 }

@@ -4,10 +4,11 @@
 #include <string.h>
 #include <sys/file.h>
 
+// Logs job information to a file
 void log_job(int job_id, char *command, char *status) {
     int fd = open("logs/system.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
 
-    if (fd < 0) {
+    if(fd < 0){
         perror("log open failed");
         return;
     }
