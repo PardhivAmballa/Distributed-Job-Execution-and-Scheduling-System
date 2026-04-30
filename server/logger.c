@@ -16,9 +16,7 @@ void log_job(int job_id, char *command, char *status) {
     flock(fd, LOCK_EX);
 
     char buffer[512];
-    snprintf(buffer, sizeof(buffer),
-        "JobID: %d | Command: %s | Status: %s\n",
-        job_id, command, status);
+    snprintf(buffer, sizeof(buffer), "JobID: %d | Command: %s | Status: %s\n", job_id, command, status);
 
     write(fd, buffer, strlen(buffer));
 

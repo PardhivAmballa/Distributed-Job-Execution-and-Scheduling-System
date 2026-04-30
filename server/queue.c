@@ -73,8 +73,13 @@ int add_job(char *command, char *username) {
     if (job_count >= MAX_JOBS) return -1;
 
     job_queue[job_count].job_id = job_count + 1;
-    strcpy(job_queue[job_count].command, command);
-    strcpy(job_queue[job_count].owner, username);
+    
+    strncpy(job_queue[job_count].command, command, MAX_CMD_LEN - 1); // Copying the command to the job structure
+    job_queue[job_count].command[MAX_CMD_LEN - 1] = '\0'; // Ensuring the command is null-terminated
+    
+    strncpy(job_queue[job_count].owner, username, 49); // Copying the owner to the job structure
+    job_queue[job_count].owner[49] = '\0'; // Ensuring the owner is null-terminated
+    
     job_queue[job_count].status = JOB_PENDING;
 
     job_count++;

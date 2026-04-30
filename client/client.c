@@ -40,11 +40,15 @@ int main() {
 
     msg.type = MSG_LOGIN;
 
-    int sock = connect_server(&server);
+    int sock = connect_server(&server); // Establishing connection with the server
     if (sock < 0) return 1;
 
-    send(sock, &msg, sizeof(msg), 0);
-    recv(sock, &msg, sizeof(msg), 0);
+    send(sock, &msg, sizeof(msg), 0); // Sending the login message to the server
+    if (recv(sock, &msg, sizeof(msg), MSG_WAITALL) <= 0) {
+        printf("\n[!] Connection to server lost.\n");
+        close(sock);
+        return 1;
+    }
 
     printf("\n[✔] %s\n", msg.job.output);
     close(sock);
@@ -64,13 +68,17 @@ int main() {
 
         printf("Enter choice: ");
         int ch;
-        scanf("%d", &ch);
+        if (scanf("%d", &ch) != 1) {
+            while (getchar() != '\n'); // clear input buffer
+            printf("Invalid input. Please enter a number.\n");
+            continue;
+        }
 
-        memset(&msg, 0, sizeof(msg));
-        strcpy(msg.username, user);
-        strcpy(msg.password, pass);
+        memset(&msg, 0, sizeof(msg)); // Zeroing out the message structure
+        strcpy(msg.username, user); // Copying the username to the message structure
+        strcpy(msg.password, pass); // Copying the password to the message structure
 
-        sock = connect_server(&server);
+        sock = connect_server(&server); // Establishing connection with the server
         if (sock < 0) break;
 
         if (ch == 1) {
@@ -79,18 +87,31 @@ int main() {
             printf("Enter command: ");
             fgets(msg.job.command, MAX_CMD_LEN, stdin);
             msg.job.command[strcspn(msg.job.command, "\n")] = 0;
+
+            if (strlen(msg.job.command) == 0) {
+                printf("Error: Command cannot be empty.\n");
+                continue;
+            }
         }
 
         else if (ch == 2) {
             msg.type = MSG_STATUS;
             printf("Job ID: ");
-            scanf("%d", &msg.job.job_id);
+            if (scanf("%d", &msg.job.job_id) != 1) {
+                while (getchar() != '\n'); // clear input buffer
+                printf("Invalid Job ID. Please enter a number.\n");
+                continue;
+            }
         }
 
         else if (ch == 3) {
             msg.type = MSG_RESULT;
             printf("Job ID: ");
-            scanf("%d", &msg.job.job_id);
+            if (scanf("%d", &msg.job.job_id) != 1) {
+                while (getchar() != '\n'); // clear input buffer
+                printf("Invalid Job ID. Please enter a number.\n");
+                continue;
+            }
         }
 
         else if (is_admin && ch == 4) {
@@ -123,7 +144,11 @@ int main() {
         }
 
         send(sock, &msg, sizeof(msg), 0);
-        recv(sock, &msg, sizeof(msg), 0);
+        if (recv(sock, &msg, sizeof(msg), MSG_WAITALL) <= 0) {
+            printf("\n[!] Connection to server lost.\n");
+            close(sock);
+            break;
+        }
 
         printf("\n[+] %s\n", msg.job.output);
 

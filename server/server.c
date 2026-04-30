@@ -57,7 +57,7 @@ void execute_command(char *cmd, char *output) {
 void handle_client(int client_socket) {
     message_t msg;
 
-    if (recv(client_socket, &msg, sizeof(msg), 0) <= 0) {
+    if (recv(client_socket, &msg, sizeof(msg), MSG_WAITALL) <= 0) {
         close(client_socket);
         return;
     }
@@ -214,10 +214,10 @@ int main() {
 
         pthread_mutex_lock(&task_mutex);
 
-        if (count < TASK_QUEUE_SIZE) { // Checking if the task queue is full
+        if (count < TASK_QUEUE_SIZE) {
             task_queue[rear] = client_socket; // Adding the client socket to the task queue
             rear = (rear + 1) % TASK_QUEUE_SIZE; // Moving to the next task
-            count++; // Incrementing the task count
+            count++;
             sem_post(&task_sem);
         } else {
             close(client_socket);

@@ -35,6 +35,5 @@ typedef struct {
 #define MSG_SUBMIT 2
 #define MSG_STATUS 3
 #define MSG_RESULT 4
-#define MSG_LOGS 5
 
 #endif
