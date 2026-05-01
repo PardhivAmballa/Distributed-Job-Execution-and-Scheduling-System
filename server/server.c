@@ -36,19 +36,19 @@ void execute_command(char *cmd, char *output) {
     }
 
     if (fork() == 0) { // Child process
-        dup2(fd[1], STDOUT_FILENO); // Redirect stdout to pipe
+        dup2(fd[1], STDOUT_FILENO); // output goes to pipe instead of terminal
         close(fd[0]); // Close unused read end
         close(fd[1]); // Close write end
 
-        execl("/bin/sh", "sh", "-c", cmd, NULL); // Execute command
+        execl("/bin/sh", "sh", "-c", cmd, NULL); // execute the command
         exit(1);
     } 
     else { // Parent process
         close(fd[1]); // Close write end
-        int n = read(fd[0], output, MAX_OUTPUT_LEN - 1);
-        if(n > 0) output[n] = '\0'; // Null-terminate output
+        int n = read(fd[0], output, MAX_OUTPUT_LEN-1); // read the output from the pipe (child process output)
+        if(n > 0) output[n] = '\0'; // Stores output in the buffer
         close(fd[0]); // Close read end
-        wait(NULL); // Wait for child process to finish
+        wait(NULL); // Wait for child process to finish (prevent zombie process)
     }
 }
 
@@ -120,8 +120,7 @@ void handle_client(int client_socket) {
         if (!job) {
             strcpy(msg.job.output, "Invalid ID");
         }
-        else if (strcmp(role, "admin") != 0 &&
-                 strcmp(job->owner, msg.username) != 0) {
+        else if (strcmp(role, "admin") != 0 && strcmp(job->owner, msg.username) != 0) {
             strcpy(msg.job.output, "Access Denied");
         }
         else {
